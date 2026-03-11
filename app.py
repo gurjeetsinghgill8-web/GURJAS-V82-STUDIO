@@ -1,77 +1,110 @@
 import streamlit as st
-import os, asyncio, requests, edge_tts, subprocess
+import os, asyncio, requests, edge_tts, subprocess, shutil
 from groq import Groq
 from urllib.parse import quote
 
 # 1. UI & BRANDING
 st.set_page_config(page_title="GURJAS V82 STUDIO", page_icon="🎬", layout="centered")
-st.markdown("<h1 style='text-align: center; color: #FFD700;'>🎬 GURJAS V82: INDUSTRIAL STUDIO</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center;'>Dr. Vasu Memorial Clinic | 2026 FFmpeg Edition</p>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; color: #FFD700;'>🎬 GURJAS V82: DIRECTOR'S STUDIO</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center;'>Dr. Vasu Memorial Clinic | Multi-Shot Documentary Engine</p>", unsafe_allow_html=True)
 
-# 2. KEYS LOADING
+# 2. KEYS & FOLDER SETUP
 try:
-    GROQ_KEY = st.secrets["GROQ_KEY"]
+    client = Groq(api_key=st.secrets["GROQ_KEY"])
     PEXELS_KEY = st.secrets["PEXELS_KEY"]
-    client = Groq(api_key=GROQ_KEY)
 except:
-    st.error("🚨 API Keys Missing in Streamlit Secrets!")
+    st.error("🚨 API Keys Missing! Please check Secrets.")
     st.stop()
 
-if 'script' not in st.session_state: st.session_state.script = ""
-if 'kw' not in st.session_state: st.session_state.kw = "heart health"
+# Project Folder Management
+PROJECT_DIR = "current_project"
+if os.path.exists(PROJECT_DIR): shutil.rmtree(PROJECT_DIR)
+os.makedirs(f"{PROJECT_DIR}/clips")
 
-# --- PHASE 1: THE RESEARCHER ---
-topic = st.text_input("💉 Enter Medical Topic:", placeholder="e.g., Heart attack vs Cardiac Arrest...")
+# 3. AGENTIC PROMPT LOGIC (The "Expert Teacher" Persona)
+if 'script_data' not in st.session_state: st.session_state.script_data = []
 
-if st.button("🚀 ACTIVATE AGENTS"):
-    with st.status("🔬 Agent Researcher is analyzing...", expanded=True) as status:
-        prompt = (f"Act as a Cardiac Surgeon. Research {topic}. "
-                  "Write a 30s viral Hinglish script for Reels. "
-                  "Format: KEYWORD | SCRIPT")
+topic = st.text_input("💉 Enter Medical Topic:", placeholder="e.g., How a Heart Attack feels...")
+mode = st.radio("Select Production Mode:", ["Short Reel (5-6 Shots)", "Documentary (Parallel Storyline)"], horizontal=True)
+
+if st.button("🚀 ACTIVATE PRODUCTION AGENTS"):
+    with st.status("🔬 Agent Researcher & Storyteller working...", expanded=True) as status:
+        num_scenes = 6 if "Short" in mode else 12
+        
+        # ELI8 (Explain Like I'm 8) + Expert Prompt
+        prompt = (
+            f"Act as a World-Class Cardiac Surgeon and a Master Teacher for 8th graders. "
+            f"Topic: {topic}. Break this into {num_scenes} scenes. "
+            f"Each scene must have a visual keyword and 1 sentence of simplified medical explanation. "
+            f"Use high-engagement hooks. Format: SCENE_START | Keyword | Script | SCENE_END"
+        )
+        
         res = client.chat.completions.create(messages=[{"role": "user", "content": prompt}], model="llama-3.3-70b-versatile")
-        data = res.choices[0].message.content
-        st.session_state.kw, st.session_state.script = data.split("|", 1) if "|" in data else (topic, data)
-        status.update(label="✅ Script Ready!", state="complete")
+        raw_output = res.choices[0].message.content
+        
+        # Parse the scenes
+        scenes = re.findall(r"SCENE_START \| (.*?) \| (.*?) \| SCENE_END", raw_output)
+        st.session_state.script_data = scenes
+        status.update(label="✅ Documentary Storyboard Ready!", state="complete")
 
-# --- PHASE 2: THE INDUSTRIAL ENGINE (FFmpeg) ---
-if st.session_state.script:
-    final_scr = st.text_area("✍️ Review Script:", st.session_state.script, height=150)
-    
-    if st.button("🎬 RENDER 9:16 HD VIDEO"):
-        with st.spinner("⚡️ FFmpeg is stitching your video... (60s)"):
+# 4. MULTI-SHOT RENDERING ENGINE (FFmpeg Direct)
+if st.session_state.script_data:
+    st.subheader("🎬 Storyboard Preview")
+    full_script = ""
+    for idx, (kw, scr) in enumerate(st.session_state.script_data):
+        st.write(f"**Shot {idx+1} ({kw}):** {scr}")
+        full_script += f" {scr}"
+
+    if st.button("🎞️ START MULTI-SHOT RENDERING"):
+        with st.spinner("⚡️ Stitching 6-8 Medical Shots... (Takes 2-3 mins)"):
             try:
-                # A. AUDIO (Edge-TTS)
-                v_file = "voice.mp3"
+                # A. Generate Master Audio (Edge-TTS)
+                audio_path = f"{PROJECT_DIR}/full_voice.mp3"
                 async def speak():
-                    await edge_tts.Communicate(final_scr, "hi-IN-MadhurNeural", rate="+20%").save(v_file)
+                    await edge_tts.Communicate(full_script, "hi-IN-MadhurNeural", rate="+15%").save(audio_path)
                 asyncio.run(speak())
 
-                # B. VISUALS (Pexels)
-                h = {"Authorization": PEXELS_KEY}
-                v_url = f"https://api.pexels.com/videos/search?query={quote(st.session_state.kw.strip())}&per_page=1&orientation=portrait"
-                v_r = requests.get(v_url, headers=h).json()
-                v_link = v_r['videos'][0]['video_files'][0]['link']
-                with open("raw.mp4", "wb") as f: f.write(requests.get(v_link).content)
+                # B. Fetch Multi-Clips (Pexels)
+                clip_files = []
+                for idx, (kw, scr) in enumerate(st.session_state.script_data):
+                    h = {"Authorization": PEXELS_KEY}
+                    v_url = f"https://api.pexels.com/videos/search?query={quote(kw.strip())}&per_page=1&orientation=portrait"
+                    v_r = requests.get(v_url, headers=h).json()
+                    if 'videos' in v_r and v_r['videos']:
+                        v_link = v_r['videos'][0]['video_files'][0]['link']
+                        path = f"{PROJECT_DIR}/clips/clip_{idx}.mp4"
+                        with open(path, "wb") as f: f.write(requests.get(v_link).content)
+                        clip_files.append(path)
 
-                # C. FFmpeg SURGERY (Direct Command Line)
-                # Combine video and audio, and overlay a simple branding text
-                output_file = "final_output.mp4"
+                # C. INDUSTRIAL STITCHING (FFmpeg Concat)
+                # 1. Resize and unify all clips
+                unified_clips = []
+                for idx, clip in enumerate(clip_files):
+                    unified_path = f"{PROJECT_DIR}/clips/uni_{idx}.ts" # TS format is better for stitching
+                    cmd = f'ffmpeg -y -i {clip} -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24" -c:v libx264 -preset ultrafast -an {unified_path}'
+                    subprocess.run(cmd, shell=True)
+                    unified_clips.append(unified_path)
+
+                # 2. Concat all unified clips
+                concat_list = f"{PROJECT_DIR}/concat_list.txt"
+                with open(concat_list, "w") as f:
+                    for c in unified_clips: f.write(f"file '{os.path.abspath(c)}'\n")
                 
-                # FFmpeg Command: Combine + Text Overlay + Resize
-                # We use 'drawtext' filter which is standard in FFmpeg
-                cmd = (
-                    f'ffmpeg -y -i raw.mp4 -i voice.mp3 -c:v libx264 -c:a aac '
-                    f'-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,'
-                    f'drawtext=text=\'GURJAS MEDICAL ALERT\':fontcolor=yellow:fontsize=60:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.6:boxborderw=20" '
-                    f'-map 0:v:0 -map 1:a:0 -shortest {output_file}'
+                temp_video = f"{PROJECT_DIR}/temp_full.mp4"
+                subprocess.run(f'ffmpeg -y -f concat -safe 0 -i {concat_list} -c copy {temp_video}', shell=True)
+
+                # 3. Add Final Audio & Branding
+                final_output = "GURJAS_PRODUCTION.mp4"
+                cmd_final = (
+                    f'ffmpeg -y -i {temp_video} -i {audio_path} -c:v libx264 -c:a aac -map 0:v:0 -map 1:a:0 '
+                    f'-vf "drawtext=text=\'GURJAS MEDICAL ALERT\':fontcolor=yellow:fontsize=65:x=(w-text_w)/2:y=150:box=1:boxcolor=black@0.6" '
+                    f'-shortest {final_output}'
                 )
-                
-                subprocess.run(cmd, shell=True, check=True)
-                
-                st.video(output_file)
-                st.download_button("📥 DOWNLOAD TO PHONE", open(output_file, "rb"), file_name="Gurjas_V82_Video.mp4")
-                st.success("✅ Surgery Successful! Video is ready.")
-                
+                subprocess.run(cmd_final, shell=True)
+
+                st.video(final_output)
+                st.download_button("📥 DOWNLOAD TO PHONE", open(final_output, "rb"), file_name=f"Gurjas_V82_{topic}.mp4")
+                st.success("🏥 Multi-Shot Surgery Successful!")
+
             except Exception as e:
-                st.error(f"⚠️ Industrial Error: {e}")
-                st.info("FFmpeg failed to process. Ensure packages.txt has 'ffmpeg'.")
+                st.error(f"⚠️ Complication: {e}")
