@@ -1,6 +1,7 @@
+
 streamlit
 groq
 edge-tts
-moviepy>=2.0.0
-Pillow>=10.1.0
+moviepy
+Pillow
 requests
