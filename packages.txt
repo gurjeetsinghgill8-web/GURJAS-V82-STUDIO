@@ -1,3 +1,2 @@
 imagemagick
-ffmpeg
 libgl1
