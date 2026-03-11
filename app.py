@@ -1,48 +1,48 @@
 import streamlit as st
-import os, asyncio, requests, edge_tts, subprocess, shutil
+import os, asyncio, requests, edge_tts, subprocess, shutil, re
 from groq import Groq
 from urllib.parse import quote
 
 # 1. UI & BRANDING
 st.set_page_config(page_title="GURJAS V82 STUDIO", page_icon="🎬", layout="centered")
 st.markdown("<h1 style='text-align: center; color: #FFD700;'>🎬 GURJAS V82: DIRECTOR'S STUDIO</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center;'>Dr. Vasu Memorial Clinic | Multi-Shot Documentary Engine</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center;'>Dr. Vasu Memorial Clinic | 2026 Multi-Shot Documentary Engine</p>", unsafe_allow_html=True)
 
 # 2. KEYS & FOLDER SETUP
 try:
     client = Groq(api_key=st.secrets["GROQ_KEY"])
     PEXELS_KEY = st.secrets["PEXELS_KEY"]
 except:
-    st.error("🚨 API Keys Missing! Please check Secrets.")
+    st.error("🚨 API Keys Missing! Please check Streamlit Secrets.")
     st.stop()
 
-# Project Folder Management
+# Project Folder Management (Clean start for every project)
 PROJECT_DIR = "current_project"
 if os.path.exists(PROJECT_DIR): shutil.rmtree(PROJECT_DIR)
 os.makedirs(f"{PROJECT_DIR}/clips")
 
-# 3. AGENTIC PROMPT LOGIC (The "Expert Teacher" Persona)
+# 3. AGENTIC PROMPT LOGIC
 if 'script_data' not in st.session_state: st.session_state.script_data = []
 
-topic = st.text_input("💉 Enter Medical Topic:", placeholder="e.g., How a Heart Attack feels...")
+topic = st.text_input("💉 Enter Medical Topic:", placeholder="e.g., Blockage in Heart Arteries...")
 mode = st.radio("Select Production Mode:", ["Short Reel (5-6 Shots)", "Documentary (Parallel Storyline)"], horizontal=True)
 
 if st.button("🚀 ACTIVATE PRODUCTION AGENTS"):
     with st.status("🔬 Agent Researcher & Storyteller working...", expanded=True) as status:
         num_scenes = 6 if "Short" in mode else 12
         
-        # ELI8 (Explain Like I'm 8) + Expert Prompt
+        # ELI8 (Explain Like I'm 8) + Expert Physician Persona
         prompt = (
             f"Act as a World-Class Cardiac Surgeon and a Master Teacher for 8th graders. "
             f"Topic: {topic}. Break this into {num_scenes} scenes. "
-            f"Each scene must have a visual keyword and 1 sentence of simplified medical explanation. "
-            f"Use high-engagement hooks. Format: SCENE_START | Keyword | Script | SCENE_END"
+            f"Each scene must have a very specific visual keyword and 1 sentence of simplified medical explanation. "
+            f"Format exactly as: SCENE_START | Keyword | Script | SCENE_END"
         )
         
         res = client.chat.completions.create(messages=[{"role": "user", "content": prompt}], model="llama-3.3-70b-versatile")
         raw_output = res.choices[0].message.content
         
-        # Parse the scenes
+        # Parse the scenes using the imported 're' module
         scenes = re.findall(r"SCENE_START \| (.*?) \| (.*?) \| SCENE_END", raw_output)
         st.session_state.script_data = scenes
         status.update(label="✅ Documentary Storyboard Ready!", state="complete")
@@ -56,15 +56,15 @@ if st.session_state.script_data:
         full_script += f" {scr}"
 
     if st.button("🎞️ START MULTI-SHOT RENDERING"):
-        with st.spinner("⚡️ Stitching 6-8 Medical Shots... (Takes 2-3 mins)"):
+        with st.spinner("⚡️ Stitching Shots... (This may take 2-4 minutes)"):
             try:
-                # A. Generate Master Audio (Edge-TTS)
+                # A. AUDIO (Edge-TTS)
                 audio_path = f"{PROJECT_DIR}/full_voice.mp3"
                 async def speak():
                     await edge_tts.Communicate(full_script, "hi-IN-MadhurNeural", rate="+15%").save(audio_path)
                 asyncio.run(speak())
 
-                # B. Fetch Multi-Clips (Pexels)
+                # B. FETCH MULTI-CLIPS (Pexels)
                 clip_files = []
                 for idx, (kw, scr) in enumerate(st.session_state.script_data):
                     h = {"Authorization": PEXELS_KEY}
@@ -76,16 +76,16 @@ if st.session_state.script_data:
                         with open(path, "wb") as f: f.write(requests.get(v_link).content)
                         clip_files.append(path)
 
-                # C. INDUSTRIAL STITCHING (FFmpeg Concat)
+                # C. INDUSTRIAL STITCHING (FFmpeg)
                 # 1. Resize and unify all clips
                 unified_clips = []
                 for idx, clip in enumerate(clip_files):
-                    unified_path = f"{PROJECT_DIR}/clips/uni_{idx}.ts" # TS format is better for stitching
+                    unified_path = f"{PROJECT_DIR}/clips/uni_{idx}.ts"
                     cmd = f'ffmpeg -y -i {clip} -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24" -c:v libx264 -preset ultrafast -an {unified_path}'
                     subprocess.run(cmd, shell=True)
                     unified_clips.append(unified_path)
 
-                # 2. Concat all unified clips
+                # 2. Concat
                 concat_list = f"{PROJECT_DIR}/concat_list.txt"
                 with open(concat_list, "w") as f:
                     for c in unified_clips: f.write(f"file '{os.path.abspath(c)}'\n")
