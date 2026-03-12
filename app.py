@@ -744,8 +744,8 @@ if st.session_state.scenes:
                 clips.append(clip); audios.append(aud)
 
                 if show_prev:
-                    with st.expander(f"{{'hook':'🔴','mystery':'🟣','clue':'🔵','rising':'🟠','reveal':'🟢','resolution':'🏆'}.get(sc['phase'],'⚪')} Scene {idx+1} — {sc['keyword']}",expanded=False):
-                        st.image(img,caption=sc["hindi"][:60])
+                    _icons = {'hook':'🔴','mystery':'🟣','clue':'🔵','rising':'🟠','reveal':'🟢','resolution':'🏆'}
+with st.expander(f"{_icons.get(sc['phase'],'⚪')} Scene {idx+1} — {sc['keyword']}", expanded=False):
 
                 logbox.write(f"✅ Scene {idx+1} [{sc['phase']}] complete.")
 
