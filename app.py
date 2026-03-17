@@ -10,26 +10,25 @@ import edge_tts
 from PIL import Image
 
 # =====================
-# API KEYS
+# KEYS
 # =====================
 STABILITY_API_KEY = st.secrets["STABILITY_API_KEY"]
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
-st.title("🎬 GURJAS FINAL STABLE")
+st.title("🎬 GURJAS CINEMATIC (FINAL FIXED)")
 
 topic = st.text_input("Enter Topic", "Heart Attack Warning")
-btn = st.button("Generate Video")
+btn = st.button("Generate Cinematic Video")
 
 # =====================
 # STORY
 # =====================
 def generate_story(topic):
-
     prompt = f"""
-    Write a simple Hindi emotional story (no headings).
+    Write a short emotional Hindi story.
     Topic: {topic}
+    No headings. Natural storytelling.
     """
-
     url = "https://api.groq.com/openai/v1/chat/completions"
 
     headers = {
@@ -49,7 +48,6 @@ def generate_story(topic):
 # IMAGE
 # =====================
 def generate_image(prompt, path):
-
     url = "https://api.stability.ai/v2beta/stable-image/generate/core"
 
     headers = {
@@ -105,10 +103,7 @@ async def generate_voice(text, output):
 # =====================
 def make_video(images, audio, out):
 
-    if len(images) == 0:
-        return
-
-    clip = ImageSequenceClip(images, fps=1)
+    clip = ImageSequenceClip(images, fps=0.7)
 
     if os.path.exists(audio):
         audio_clip = AudioFileClip(audio)
@@ -123,21 +118,41 @@ if btn:
 
     os.makedirs("out", exist_ok=True)
 
-    st.write("🧠 Generating script...")
+    st.write("🧠 Generating story...")
     story = generate_story(topic)
-    st.text_area("Script", story, height=200)
+    st.text_area("Story", story, height=200)
 
-    st.write("🖼 Generating image...")
-    img_path = "out/img.png"
+    # 🎬 CINEMATIC SCENES
+    scenes = [
+        "middle age indian man holding chest in office, heart attack warning",
+        "man collapsing, dramatic lighting, hospital emergency",
+        "doctor treating patient in ICU, emotional scene",
+        "family crying in hospital, emotional tension",
+        "man recovering smiling with family, hope"
+    ]
 
-    img = generate_image(f"indian hospital cinematic {topic}", img_path)
+    st.write("🎨 Generating cinematic images...")
+    images = []
 
-    if not img:
-        img = Image.new("RGB", (720,1280), (0,0,0))
-        img.save(img_path)
+    for i, scene in enumerate(scenes):
+        path = f"out/{i}.png"
 
-    # repeat image for video
-    images = [img_path] * 5
+        prompt = f"""
+        ultra realistic indian cinematic scene,
+        {scene},
+        35mm film look,
+        dramatic lighting,
+        real human face,
+        not cartoon
+        """
+
+        img = generate_image(prompt, path)
+
+        if not img:
+            img = Image.new("RGB", (720,1280), (10,10,10))
+            img.save(path)
+
+        images.append(path)
 
     st.write("🔊 Generating voice...")
     audio = "out/audio.mp3"
@@ -147,7 +162,7 @@ if btn:
         st.error("Voice failed")
         st.stop()
 
-    st.write("🎬 Creating video...")
+    st.write("🎬 Creating cinematic video...")
     video = "out/video.mp4"
 
     make_video(images, audio, video)
