@@ -3,11 +3,10 @@ import os
 import requests
 import asyncio
 
-from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
-from moviepy.audio.io.AudioFileClip import AudioFileClip
+from moviepy.editor import ImageClip, concatenate_videoclips, AudioFileClip, CompositeVideoClip, TextClip
 
 import edge_tts
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 
 # =====================
 # SECRETS
@@ -15,26 +14,23 @@ from PIL import Image, ImageDraw, ImageFont
 STABILITY_API_KEY = st.secrets["STABILITY_API_KEY"]
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
-st.title("🎬 GURJAS CINEMATIC AI")
+st.title("🎬 GURJAS PRO MAX (CINEMATIC)")
 
 topic = st.text_input("Enter Topic", "Heart Attack Warning")
 btn = st.button("Generate")
 
 # =====================
-# STORY (NO LABELS)
+# STORY
 # =====================
 def generate_story(topic):
+
     prompt = f"""
-    Hindi me ek emotional cinematic story likho (60 sec video ke liye).
+    Write a cinematic Hindi emotional story (60 sec)
 
     Topic: {topic}
 
-    RULES:
-    - HOOK, STORY jaise words mat likho
-    - continuous movie story ho
-    - suspense ho
-    - real patient feeling ho
-    - engaging ho
+    No headings. Continuous story.
+    suspense + emotional + realistic
     """
 
     url = "https://api.groq.com/openai/v1/chat/completions"
@@ -56,13 +52,14 @@ def generate_story(topic):
 # SPLIT
 # =====================
 def split_scenes(text):
-    lines = text.split(".")
-    return [l.strip() for l in lines if len(l.strip()) > 20][:6]
+    parts = text.split(".")
+    return [p.strip() for p in parts if len(p.strip()) > 20][:6]
 
 # =====================
 # IMAGE
 # =====================
 def generate_image(prompt, path):
+
     url = "https://api.stability.ai/v2beta/stable-image/generate/core"
 
     headers = {
@@ -83,52 +80,57 @@ def generate_image(prompt, path):
             return path
     except:
         pass
+
     return None
 
 # =====================
 # FALLBACK
 # =====================
-def fallback(path, text):
-    img = Image.new("RGB", (720,1280), (0,0,0))
-    draw = ImageDraw.Draw(img)
-    draw.text((50,600), text[:40], fill=(255,255,255))
+def fallback(path):
+    img = Image.new("RGB", (720,1280), (15,15,15))
     img.save(path)
     return path
 
 # =====================
-# BRANDING
-# =====================
-def add_branding(img_path):
-    img = Image.open(img_path)
-    draw = ImageDraw.Draw(img)
-
-    text = "Dr G S Gill | Heart Clinic | Punjab"
-
-    draw.rectangle([0,1100,720,1280], fill=(0,0,0))
-    draw.text((30,1130), text, fill=(255,255,255))
-
-    img.save(img_path)
-    return img_path
-
-# =====================
-# VOICE (MALE FAST)
+# VOICE
 # =====================
 async def voice(text, out):
-    tts = edge_tts.Communicate(text, "hi-IN-MadhurNeural", rate="+20%")
+    tts = edge_tts.Communicate(text, "hi-IN-MadhurNeural", rate="+15%")
     await tts.save(out)
 
 # =====================
-# VIDEO
+# VIDEO (CINEMATIC)
 # =====================
-def make_video(images, audio, out):
+def make_video(images, scenes, audio, out):
 
-    clip = ImageSequenceClip(images, fps=0.4)
+    clips = []
+
+    for i, img in enumerate(images):
+
+        base = ImageClip(img).set_duration(5)
+
+        # 🎥 zoom effect
+        zoom = base.resize(lambda t: 1 + 0.05*t)
+
+        # 📝 subtitle (English safe)
+        txt = TextClip(
+            scenes[i][:60],
+            fontsize=40,
+            color='white',
+            method='caption',
+            size=(700, None)
+        ).set_position(("center", "bottom")).set_duration(5)
+
+        video = CompositeVideoClip([zoom, txt])
+        clips.append(video)
+
+    final = concatenate_videoclips(clips, method="compose")
 
     if os.path.exists(audio):
         audio_clip = AudioFileClip(audio)
-        clip = clip.with_audio(audio_clip)
+        final = final.set_audio(audio_clip)
 
-    clip.write_videofile(out, fps=24)
+    final.write_videofile(out, fps=24)
 
 # =====================
 # MAIN
@@ -137,26 +139,29 @@ if btn:
 
     os.makedirs("out", exist_ok=True)
 
-    st.write("🧠 Writing story...")
+    st.write("🧠 Story...")
     story = generate_story(topic)
     st.text_area("Story", story, height=200)
 
     scenes = split_scenes(story)
 
-    st.write("🎨 Generating images...")
+    st.write("🎨 Images...")
     images = []
 
     for i, s in enumerate(scenes):
         path = f"out/{i}.png"
 
-        prompt = f"realistic indian hospital, {s}, cinematic, emotional"
+        prompt = f"""
+        ultra realistic indian hospital,
+        doctor patient emotional,
+        cinematic lighting,
+        {s}
+        """
 
         img = generate_image(prompt, path)
 
         if not img:
-            img = fallback(path, s)
-
-        img = add_branding(img)
+            img = fallback(path)
 
         images.append(img)
 
@@ -164,8 +169,9 @@ if btn:
     audio = "out/audio.mp3"
     asyncio.run(voice(story, audio))
 
-    st.write("🎬 Making video...")
-    video = "out/video.mp4"
-    make_video(images, audio, video)
+    st.write("🎬 Rendering...")
+    video = "out/final.mp4"
+
+    make_video(images, scenes, audio, video)
 
     st.video(video)
