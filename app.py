@@ -3,18 +3,19 @@ import os
 import requests
 import asyncio
 
-from moviepy.editor import ImageClip, concatenate_videoclips, AudioFileClip, CompositeVideoClip, TextClip
+from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
+from moviepy.audio.io.AudioFileClip import AudioFileClip
 
 import edge_tts
 from PIL import Image
 
 # =====================
-# SECRETS
+# KEYS
 # =====================
 STABILITY_API_KEY = st.secrets["STABILITY_API_KEY"]
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
-st.title("🎬 GURJAS PRO MAX (CINEMATIC)")
+st.title("🎬 GURJAS PRO MAX (STABLE)")
 
 topic = st.text_input("Enter Topic", "Heart Attack Warning")
 btn = st.button("Generate")
@@ -25,12 +26,9 @@ btn = st.button("Generate")
 def generate_story(topic):
 
     prompt = f"""
-    Write a cinematic Hindi emotional story (60 sec)
-
+    Write a 60 sec Hindi emotional story.
     Topic: {topic}
-
-    No headings. Continuous story.
-    suspense + emotional + realistic
+    cinematic + suspense + realistic
     """
 
     url = "https://api.groq.com/openai/v1/chat/completions"
@@ -73,7 +71,8 @@ def generate_image(prompt, path):
     }
 
     try:
-        r = requests.post(url, headers=headers, files=files)
+        r = requests.post(url, headers=headers, files=files, timeout=60)
+
         if r.status_code == 200:
             with open(path, "wb") as f:
                 f.write(r.content)
@@ -87,7 +86,7 @@ def generate_image(prompt, path):
 # FALLBACK
 # =====================
 def fallback(path):
-    img = Image.new("RGB", (720,1280), (15,15,15))
+    img = Image.new("RGB", (720,1280), (20,20,20))
     img.save(path)
     return path
 
@@ -99,38 +98,20 @@ async def voice(text, out):
     await tts.save(out)
 
 # =====================
-# VIDEO (CINEMATIC)
+# VIDEO (SUPER STABLE)
 # =====================
-def make_video(images, scenes, audio, out):
+def make_video(images, audio, out):
 
-    clips = []
-
-    for i, img in enumerate(images):
-
-        base = ImageClip(img).set_duration(5)
-
-        # 🎥 zoom effect
-        zoom = base.resize(lambda t: 1 + 0.05*t)
-
-        # 📝 subtitle (English safe)
-        txt = TextClip(
-            scenes[i][:60],
-            fontsize=40,
-            color='white',
-            method='caption',
-            size=(700, None)
-        ).set_position(("center", "bottom")).set_duration(5)
-
-        video = CompositeVideoClip([zoom, txt])
-        clips.append(video)
-
-    final = concatenate_videoclips(clips, method="compose")
+    clip = ImageSequenceClip(images, fps=1)
 
     if os.path.exists(audio):
         audio_clip = AudioFileClip(audio)
-        final = final.set_audio(audio_clip)
+        try:
+            clip = clip.set_audio(audio_clip)
+        except:
+            pass
 
-    final.write_videofile(out, fps=24)
+    clip.write_videofile(out, fps=24)
 
 # =====================
 # MAIN
@@ -152,8 +133,9 @@ if btn:
         path = f"out/{i}.png"
 
         prompt = f"""
-        ultra realistic indian hospital,
-        doctor patient emotional,
+        indian hospital scene,
+        doctor and patient,
+        emotional moment,
         cinematic lighting,
         {s}
         """
@@ -172,6 +154,6 @@ if btn:
     st.write("🎬 Rendering...")
     video = "out/final.mp4"
 
-    make_video(images, scenes, audio, video)
+    make_video(images, audio, video)
 
     st.video(video)
