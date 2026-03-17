@@ -1,8 +1,11 @@
 import streamlit as st
 import os
 import requests
-from moviepy.editor import *
 import asyncio
+
+# SAFE moviepy imports
+from moviepy.editor import ImageClip, concatenate_videoclips, AudioFileClip
+
 import edge_tts
 
 # ==============================
@@ -11,14 +14,13 @@ import edge_tts
 STABILITY_API_KEY = "sk-zO5hqr9zjKHhFwJLrJpiFIlT91ERpzzQGMcf0YzbdOSUmwYx"
 
 st.set_page_config(page_title="GURJAS AI Studio", layout="wide")
-
-st.title("🎬 GURJAS AI VIDEO GENERATOR (PRO VERSION)")
+st.title("🎬 GURJAS AI VIDEO GENERATOR")
 
 # ==============================
 # INPUT
 # ==============================
-topic = st.text_input("Enter Topic (e.g. Heart Attack Warning)")
-num_scenes = st.slider("Number of Scenes", 3, 6, 4)
+topic = st.text_input("Enter Topic", "Heart Attack Warning")
+num_scenes = st.slider("Number of Scenes", 3, 5, 3)
 
 generate_btn = st.button("🚀 Generate Video")
 
@@ -39,24 +41,41 @@ def generate_ai_image(prompt, output_path):
         "output_format": (None, "png"),
     }
 
-    response = requests.post(url, headers=headers, files=files)
+    try:
+        response = requests.post(url, headers=headers, files=files, timeout=60)
 
-    if response.status_code == 200:
-        with open(output_path, "wb") as f:
-            f.write(response.content)
-        return output_path
-    else:
-        st.error("Image generation failed")
+        if response.status_code == 200:
+            with open(output_path, "wb") as f:
+                f.write(response.content)
+            return output_path
+        else:
+            st.warning("⚠️ Image API failed, using fallback image")
+            return None
+    except:
+        st.warning("⚠️ API error, using fallback")
         return None
 
 
 def build_prompt(topic, i):
     return f"""
     Ultra realistic medical scene about {topic},
-    scene {i},
-    Indian doctor, hospital environment,
-    cinematic lighting, 4k, realistic, no cartoon
+    Indian doctor explaining to patient,
+    hospital environment,
+    cinematic lighting, 4k, realistic,
+    no cartoon, no illustration
     """
+
+
+# fallback simple image (so app kabhi crash na ho)
+def create_fallback_image(path, text):
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (720, 1280), color=(20, 20, 30))
+    draw = ImageDraw.Draw(img)
+    draw.text((50, 600), text, fill=(255, 255, 255))
+
+    img.save(path)
+    return path
 
 
 async def generate_voice(text, output_file):
@@ -81,34 +100,39 @@ def create_video(images, audio_file, output_file):
 
 
 # ==============================
-# MAIN PIPELINE
+# MAIN
 # ==============================
 
-if generate_btn and topic:
+if generate_btn:
 
     os.makedirs("output", exist_ok=True)
 
-    st.write("🖼️ Generating Images...")
+    st.write("🖼️ Generating images...")
+
     images = []
 
     for i in range(num_scenes):
         path = f"output/scene_{i}.png"
+
         prompt = build_prompt(topic, i)
-
         img = generate_ai_image(prompt, path)
-        if img:
-            images.append(img)
 
-    st.write("🔊 Generating Voice...")
+        # fallback if API fails
+        if not img:
+            img = create_fallback_image(path, f"{topic} Scene {i+1}")
+
+        images.append(img)
+
+    st.write("🔊 Generating voice...")
 
     audio_path = "output/voice.mp3"
     asyncio.run(generate_voice(f"This video explains {topic}", audio_path))
 
-    st.write("🎥 Creating Video...")
+    st.write("🎥 Creating video...")
 
     video_path = "output/final.mp4"
     create_video(images, audio_path, video_path)
 
-    st.success("✅ Done!")
+    st.success("✅ Video Ready!")
 
     st.video(video_path)
