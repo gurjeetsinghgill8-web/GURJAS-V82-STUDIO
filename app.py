@@ -3,15 +3,14 @@ import os
 import requests
 import asyncio
 
-# ✅ FIXED moviepy import (NO editor error)
-from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
-from moviepy.audio.io.AudioFileClip import AudioFileClip
+# ✅ MoviePy stable import
+from moviepy.editor import ImageSequenceClip, AudioFileClip
 
 import edge_tts
 from PIL import Image, ImageDraw
 
 # =====================
-# 🔐 SECRETS
+# 🔐 SECRETS (Streamlit)
 # =====================
 STABILITY_API_KEY = st.secrets["STABILITY_API_KEY"]
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
@@ -26,7 +25,7 @@ topic = st.text_input("Enter Topic", "Heart Attack Warning")
 btn = st.button("🚀 Generate Video")
 
 # =====================
-# STORY (HINDI LONG)
+# STORY GENERATOR
 # =====================
 def generate_story(topic):
 
@@ -36,14 +35,14 @@ def generate_story(topic):
     Topic: {topic}
 
     Format:
-    1. HOOK (shock line)
-    2. STORY (real patient case)
-    3. BUILDUP (symptoms + suspense)
-    4. TWIST
-    5. WARNING
-    6. CTA
+    HOOK
+    STORY
+    BUILDUP
+    TWIST
+    WARNING
+    CTA
 
-    Emotional + engaging + suspenseful
+    Emotional + suspenseful + engaging
     """
 
     url = "https://api.groq.com/openai/v1/chat/completions"
@@ -58,16 +57,18 @@ def generate_story(topic):
         "messages": [{"role": "user", "content": prompt}]
     }
 
-    r = requests.post(url, headers=headers, json=data)
-
-    return r.json()["choices"][0]["message"]["content"]
+    try:
+        r = requests.post(url, headers=headers, json=data, timeout=60)
+        return r.json()["choices"][0]["message"]["content"]
+    except:
+        return "Error generating story"
 
 # =====================
-# SCENE SPLIT
+# SPLIT SCENES
 # =====================
 def split_scenes(text):
     lines = text.split("\n")
-    scenes = [l.strip() for l in lines if len(l.strip()) > 20]
+    scenes = [l.strip() for l in lines if len(l.strip()) > 15]
     return scenes[:10]
 
 # =====================
@@ -102,32 +103,39 @@ def generate_image(prompt, path):
 # =====================
 # FALLBACK IMAGE
 # =====================
-def fallback(path, text):
-    img = Image.new("RGB", (720, 1280), (30, 30, 40))
+def fallback_image(path, text):
+    img = Image.new("RGB", (720, 1280), (20, 20, 30))
     draw = ImageDraw.Draw(img)
     draw.text((40, 600), text[:50], fill=(255,255,255))
     img.save(path)
     return path
 
 # =====================
-# VOICE
+# VOICE (Hindi)
 # =====================
-async def voice(text, output):
+async def generate_voice(text, output):
     tts = edge_tts.Communicate(text, "hi-IN-SwaraNeural")
     await tts.save(output)
 
 # =====================
-# VIDEO CREATION (FIXED)
+# VIDEO CREATION (ULTRA STABLE)
 # =====================
 def make_video(images, audio, output):
 
-    clip = ImageSequenceClip(images, fps=0.5)  # slow = longer video
+    try:
+        clip = ImageSequenceClip(images, fps=0.5)
 
-    if os.path.exists(audio):
-        sound = AudioFileClip(audio)
-        clip = clip.set_audio(sound)
+        if os.path.exists(audio):
+            sound = AudioFileClip(audio)
+            try:
+                clip = clip.set_audio(sound)   # old version
+            except:
+                clip = clip.with_audio(sound)  # new version
 
-    clip.write_videofile(output, fps=24)
+        clip.write_videofile(output, fps=24)
+
+    except Exception as e:
+        print("Video error:", e)
 
 # =====================
 # MAIN
@@ -145,30 +153,33 @@ if btn:
     st.write("🖼 Generating scenes...")
     images = []
 
-    for i, s in enumerate(scenes):
+    for i, scene in enumerate(scenes):
         path = f"output/img_{i}.png"
 
         prompt = f"""
         realistic indian hospital scene,
-        {s},
+        {scene},
         cinematic lighting, emotional, 4k
         """
 
         img = generate_image(prompt, path)
 
         if not img:
-            img = fallback(path, s)
+            img = fallback_image(path, scene)
 
         images.append(img)
 
-    st.write("🔊 Voice...")
+    st.write("🔊 Generating voice...")
     audio_path = "output/voice.mp3"
-    asyncio.run(voice(story, audio_path))
+    asyncio.run(generate_voice(story, audio_path))
 
-    st.write("🎬 Video rendering...")
+    st.write("🎬 Creating video...")
     video_path = "output/final.mp4"
 
     make_video(images, audio_path, video_path)
 
-    st.success("✅ Done!")
-    st.video(video_path)
+    if os.path.exists(video_path):
+        st.success("✅ Video Ready!")
+        st.video(video_path)
+    else:
+        st.error("❌ Video failed, try again")
