@@ -2,10 +2,7 @@ import streamlit as st
 import os
 import requests
 import asyncio
-
-from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
-from moviepy.audio.io.AudioFileClip import AudioFileClip
-
+import subprocess
 import edge_tts
 from PIL import Image
 
@@ -15,19 +12,18 @@ from PIL import Image
 STABILITY_API_KEY = st.secrets["STABILITY_API_KEY"]
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
-st.title("🎬 GURJAS CINEMATIC (FINAL FIXED)")
+st.title("🔥 GURJAS REAL VIDEO ENGINE")
 
 topic = st.text_input("Enter Topic", "Heart Attack Warning")
-btn = st.button("Generate Cinematic Video")
+btn = st.button("Generate")
 
 # =====================
 # STORY
 # =====================
 def generate_story(topic):
     prompt = f"""
-    Write a short emotional Hindi story.
+    Hindi emotional story, cinematic style.
     Topic: {topic}
-    No headings. Natural storytelling.
     """
     url = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -61,7 +57,7 @@ def generate_image(prompt, path):
     }
 
     try:
-        r = requests.post(url, headers=headers, files=files)
+        r = requests.post(url, headers=headers, files=files, timeout=60)
         if r.status_code == 200:
             with open(path, "wb") as f:
                 f.write(r.content)
@@ -72,44 +68,44 @@ def generate_image(prompt, path):
     return None
 
 # =====================
-# VOICE (FIXED)
+# VOICE
 # =====================
 async def generate_voice(text, output):
-
-    chunks = [text[i:i+300] for i in range(0, len(text), 300)]
-
-    voices = [
-        "hi-IN-MadhurNeural",
-        "hi-IN-SwaraNeural",
-        "en-IN-PrabhatNeural"
-    ]
-
-    for voice in voices:
-        try:
-            with open(output, "wb") as f:
-                for chunk in chunks:
-                    tts = edge_tts.Communicate(chunk, voice, rate="+10%")
-                    async for data in tts.stream():
-                        if data["type"] == "audio":
-                            f.write(data["data"])
-            return True
-        except:
-            continue
-
-    return False
+    tts = edge_tts.Communicate(text, "hi-IN-MadhurNeural")
+    await tts.save(output)
 
 # =====================
-# VIDEO
+# VIDEO (REAL FIX)
 # =====================
-def make_video(images, audio, out):
+def make_video(images, audio, output):
 
-    clip = ImageSequenceClip(images, fps=0.7)
+    # create list file
+    with open("files.txt", "w") as f:
+        for img in images:
+            f.write(f"file '{img}'\n")
+            f.write("duration 3\n")
+        f.write(f"file '{images[-1]}'\n")
 
-    if os.path.exists(audio):
-        audio_clip = AudioFileClip(audio)
-        clip = clip.set_audio(audio_clip)
+    # images → video
+    subprocess.run([
+        "ffmpeg","-y",
+        "-f","concat",
+        "-safe","0",
+        "-i","files.txt",
+        "-pix_fmt","yuv420p",
+        "temp.mp4"
+    ])
 
-    clip.write_videofile(out, fps=24)
+    # add audio
+    subprocess.run([
+        "ffmpeg","-y",
+        "-i","temp.mp4",
+        "-i",audio,
+        "-c:v","copy",
+        "-c:a","aac",
+        "-shortest",
+        output
+    ])
 
 # =====================
 # MAIN
@@ -118,57 +114,47 @@ if btn:
 
     os.makedirs("out", exist_ok=True)
 
-    st.write("🧠 Generating story...")
+    st.write("🧠 Story...")
     story = generate_story(topic)
     st.text_area("Story", story, height=200)
 
-    # 🎬 CINEMATIC SCENES
+    st.write("🎨 Images...")
     scenes = [
-        "middle age indian man holding chest in office, heart attack warning",
-        "man collapsing, dramatic lighting, hospital emergency",
-        "doctor treating patient in ICU, emotional scene",
-        "family crying in hospital, emotional tension",
-        "man recovering smiling with family, hope"
+        "indian man chest pain office",
+        "collapse emergency hospital",
+        "doctor ICU treatment",
+        "family emotional hospital",
+        "recovery happy ending"
     ]
 
-    st.write("🎨 Generating cinematic images...")
     images = []
 
-    for i, scene in enumerate(scenes):
+    for i, s in enumerate(scenes):
         path = f"out/{i}.png"
 
         prompt = f"""
         ultra realistic indian cinematic scene,
-        {scene},
-        35mm film look,
+        {s},
+        real human,
         dramatic lighting,
-        real human face,
-        not cartoon
+        4k
         """
 
         img = generate_image(prompt, path)
 
         if not img:
-            img = Image.new("RGB", (720,1280), (10,10,10))
+            img = Image.new("RGB", (720,1280), (20,20,20))
             img.save(path)
 
         images.append(path)
 
-    st.write("🔊 Generating voice...")
+    st.write("🔊 Voice...")
     audio = "out/audio.mp3"
-    ok = asyncio.run(generate_voice(story, audio))
+    asyncio.run(generate_voice(story, audio))
 
-    if not ok:
-        st.error("Voice failed")
-        st.stop()
-
-    st.write("🎬 Creating cinematic video...")
-    video = "out/video.mp4"
+    st.write("🎬 Rendering...")
+    video = "out/final.mp4"
 
     make_video(images, audio, video)
 
-    if os.path.exists(video):
-        st.success("✅ Done")
-        st.video(video)
-    else:
-        st.error("Video failed")
+    st.video(video)
