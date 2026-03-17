@@ -1,160 +1,85 @@
 import streamlit as st
 import os
-import requests
-import asyncio
 import subprocess
-import edge_tts
-from PIL import Image
+from gtts import gTTS
+from PIL import Image, ImageDraw, ImageFont
 
-# =====================
-# KEYS
-# =====================
-STABILITY_API_KEY = st.secrets["STABILITY_API_KEY"]
-GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-
-st.title("🔥 GURJAS REAL VIDEO ENGINE")
+st.title("🔥 SIMPLE STABLE VIDEO (NO BUG)")
 
 topic = st.text_input("Enter Topic", "Heart Attack Warning")
-btn = st.button("Generate")
 
-# =====================
-# STORY
-# =====================
-def generate_story(topic):
-    prompt = f"""
-    Hindi emotional story, cinematic style.
-    Topic: {topic}
+if st.button("Generate Video"):
+
+    os.makedirs("out", exist_ok=True)
+
+    # =====================
+    # STORY (STATIC - SAFE)
+    # =====================
+    story = f"""
+    दिल की चेतावनी।
+    अगर सीने में दर्द हो,
+    सांस लेने में तकलीफ हो,
+    तुरंत डॉक्टर से संपर्क करें।
+    आपकी जिंदगी अनमोल है।
     """
-    url = "https://api.groq.com/openai/v1/chat/completions"
 
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    st.text_area("Story", story)
 
-    data = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [{"role": "user", "content": prompt}]
-    }
+    # =====================
+    # IMAGE GENERATION (SAFE)
+    # =====================
+    images = []
 
-    r = requests.post(url, headers=headers, json=data)
-    return r.json()["choices"][0]["message"]["content"]
+    for i in range(5):
+        img = Image.new("RGB", (720,1280), (20,20,20))
+        draw = ImageDraw.Draw(img)
 
-# =====================
-# IMAGE
-# =====================
-def generate_image(prompt, path):
-    url = "https://api.stability.ai/v2beta/stable-image/generate/core"
+        text = f"{topic}\nScene {i+1}"
 
-    headers = {
-        "authorization": f"Bearer {STABILITY_API_KEY}",
-        "accept": "image/*"
-    }
+        draw.text((50,600), text, fill=(255,255,255))
 
-    files = {
-        "prompt": (None, prompt),
-        "output_format": (None, "png"),
-    }
+        path = f"out/{i}.png"
+        img.save(path)
+        images.append(path)
 
-    try:
-        r = requests.post(url, headers=headers, files=files, timeout=60)
-        if r.status_code == 200:
-            with open(path, "wb") as f:
-                f.write(r.content)
-            return path
-    except:
-        pass
+    # =====================
+    # VOICE (STABLE)
+    # =====================
+    audio_path = "out/audio.mp3"
 
-    return None
+    tts = gTTS(story, lang='hi')
+    tts.save(audio_path)
 
-# =====================
-# VOICE
-# =====================
-async def generate_voice(text, output):
-    tts = edge_tts.Communicate(text, "hi-IN-MadhurNeural")
-    await tts.save(output)
-
-# =====================
-# VIDEO (REAL FIX)
-# =====================
-def make_video(images, audio, output):
-
-    # create list file
+    # =====================
+    # VIDEO (PURE FFMPEG)
+    # =====================
     with open("files.txt", "w") as f:
         for img in images:
             f.write(f"file '{img}'\n")
             f.write("duration 3\n")
         f.write(f"file '{images[-1]}'\n")
 
-    # images → video
     subprocess.run([
         "ffmpeg","-y",
         "-f","concat",
         "-safe","0",
         "-i","files.txt",
+        "-vf","scale=720:1280",
         "-pix_fmt","yuv420p",
         "temp.mp4"
     ])
 
-    # add audio
+    final_video = "out/final.mp4"
+
     subprocess.run([
         "ffmpeg","-y",
         "-i","temp.mp4",
-        "-i",audio,
+        "-i",audio_path,
         "-c:v","copy",
         "-c:a","aac",
         "-shortest",
-        output
+        final_video
     ])
 
-# =====================
-# MAIN
-# =====================
-if btn:
-
-    os.makedirs("out", exist_ok=True)
-
-    st.write("🧠 Story...")
-    story = generate_story(topic)
-    st.text_area("Story", story, height=200)
-
-    st.write("🎨 Images...")
-    scenes = [
-        "indian man chest pain office",
-        "collapse emergency hospital",
-        "doctor ICU treatment",
-        "family emotional hospital",
-        "recovery happy ending"
-    ]
-
-    images = []
-
-    for i, s in enumerate(scenes):
-        path = f"out/{i}.png"
-
-        prompt = f"""
-        ultra realistic indian cinematic scene,
-        {s},
-        real human,
-        dramatic lighting,
-        4k
-        """
-
-        img = generate_image(prompt, path)
-
-        if not img:
-            img = Image.new("RGB", (720,1280), (20,20,20))
-            img.save(path)
-
-        images.append(path)
-
-    st.write("🔊 Voice...")
-    audio = "out/audio.mp3"
-    asyncio.run(generate_voice(story, audio))
-
-    st.write("🎬 Rendering...")
-    video = "out/final.mp4"
-
-    make_video(images, audio, video)
-
-    st.video(video)
+    st.success("✅ DONE (NO BLANK SCREEN)")
+    st.video(final_video)
