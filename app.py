@@ -10,12 +10,12 @@ import edge_tts
 from PIL import Image
 
 # =====================
-# KEYS
+# API KEYS
 # =====================
 STABILITY_API_KEY = st.secrets["STABILITY_API_KEY"]
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
-st.title("🎬 GURJAS SIMPLE PRO (STABLE)")
+st.title("🎬 GURJAS FINAL STABLE")
 
 topic = st.text_input("Enter Topic", "Heart Attack Warning")
 btn = st.button("Generate Video")
@@ -26,7 +26,7 @@ btn = st.button("Generate Video")
 def generate_story(topic):
 
     prompt = f"""
-    Write simple Hindi emotional reel script (no labels).
+    Write a simple Hindi emotional story (no headings).
     Topic: {topic}
     """
 
@@ -64,7 +64,6 @@ def generate_image(prompt, path):
 
     try:
         r = requests.post(url, headers=headers, files=files)
-
         if r.status_code == 200:
             with open(path, "wb") as f:
                 f.write(r.content)
@@ -75,14 +74,34 @@ def generate_image(prompt, path):
     return None
 
 # =====================
-# VOICE
+# VOICE (FIXED)
 # =====================
-async def voice(text, out):
-    tts = edge_tts.Communicate(text, "hi-IN-MadhurNeural")
-    await tts.save(out)
+async def generate_voice(text, output):
+
+    chunks = [text[i:i+300] for i in range(0, len(text), 300)]
+
+    voices = [
+        "hi-IN-MadhurNeural",
+        "hi-IN-SwaraNeural",
+        "en-IN-PrabhatNeural"
+    ]
+
+    for voice in voices:
+        try:
+            with open(output, "wb") as f:
+                for chunk in chunks:
+                    tts = edge_tts.Communicate(chunk, voice, rate="+10%")
+                    async for data in tts.stream():
+                        if data["type"] == "audio":
+                            f.write(data["data"])
+            return True
+        except:
+            continue
+
+    return False
 
 # =====================
-# VIDEO (SAFE)
+# VIDEO
 # =====================
 def make_video(images, audio, out):
 
@@ -104,11 +123,11 @@ if btn:
 
     os.makedirs("out", exist_ok=True)
 
-    st.write("🧠 Script...")
+    st.write("🧠 Generating script...")
     story = generate_story(topic)
     st.text_area("Script", story, height=200)
 
-    st.write("🖼 Image...")
+    st.write("🖼 Generating image...")
     img_path = "out/img.png"
 
     img = generate_image(f"indian hospital cinematic {topic}", img_path)
@@ -117,18 +136,24 @@ if btn:
         img = Image.new("RGB", (720,1280), (0,0,0))
         img.save(img_path)
 
-    images = [img_path] * 5   # repeat for video
+    # repeat image for video
+    images = [img_path] * 5
 
-    st.write("🔊 Voice...")
+    st.write("🔊 Generating voice...")
     audio = "out/audio.mp3"
-    asyncio.run(voice(story, audio))
+    ok = asyncio.run(generate_voice(story, audio))
 
-    st.write("🎬 Video...")
+    if not ok:
+        st.error("Voice failed")
+        st.stop()
+
+    st.write("🎬 Creating video...")
     video = "out/video.mp4"
 
     make_video(images, audio, video)
 
     if os.path.exists(video):
+        st.success("✅ Done")
         st.video(video)
     else:
         st.error("Video failed")
