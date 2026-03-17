@@ -3,30 +3,37 @@ import os
 import requests
 import asyncio
 import subprocess
-
 import edge_tts
 from PIL import Image
 
 # =====================
-# KEYS
+# API KEYS (Streamlit Secrets)
 # =====================
 STABILITY_API_KEY = st.secrets["STABILITY_API_KEY"]
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
-st.title("🎬 GURJAS PRO MAX (NO FREEZE ENGINE)")
+st.set_page_config(layout="wide")
+st.title("🎬 GURJAS PRO MAX — CINEMATIC ENGINE")
 
 topic = st.text_input("Enter Topic", "Heart Attack Warning")
-btn = st.button("Generate")
+btn = st.button("Generate Cinematic Video")
 
 # =====================
-# STORY
+# STORY GENERATION
 # =====================
 def generate_story(topic):
-
     prompt = f"""
-    Write a 60 sec Hindi emotional cinematic story.
+    Write a HIGHLY CINEMATIC Hindi short story (60 sec).
     Topic: {topic}
-    suspense + patient case + emotional
+
+    Structure:
+    - Hook (first 3 sec shocking)
+    - Emotional patient case
+    - Suspense build
+    - Twist
+    - Strong CTA
+
+    Keep natural storytelling (NO labels like scene1 etc)
     """
 
     url = "https://api.groq.com/openai/v1/chat/completions"
@@ -45,14 +52,15 @@ def generate_story(topic):
     return r.json()["choices"][0]["message"]["content"]
 
 # =====================
-# SPLIT
+# SPLIT INTO SCENES
 # =====================
 def split_scenes(text):
     parts = text.split(".")
-    return [p.strip() for p in parts if len(p.strip()) > 20][:5]
+    scenes = [p.strip() for p in parts if len(p.strip()) > 25]
+    return scenes[:5]
 
 # =====================
-# IMAGE
+# IMAGE GENERATION
 # =====================
 def generate_image(prompt, path):
 
@@ -70,6 +78,7 @@ def generate_image(prompt, path):
 
     try:
         r = requests.post(url, headers=headers, files=files, timeout=60)
+
         if r.status_code == 200:
             with open(path, "wb") as f:
                 f.write(r.content)
@@ -80,82 +89,83 @@ def generate_image(prompt, path):
     return None
 
 # =====================
-# FALLBACK
+# FALLBACK IMAGE (NO BLANK SCREEN)
 # =====================
 def fallback(path):
-    img = Image.new("RGB", (720,1280), (30,30,30))
+    img = Image.new("RGB", (720,1280), (20,20,20))
     img.save(path)
     return path
 
 # =====================
-# VOICE
+# VOICE GENERATION
 # =====================
-async def voice(text, out):
-    tts = edge_tts.Communicate(text, "hi-IN-MadhurNeural", rate="+10%")
-    await tts.save(out)
+async def generate_voice(text, output):
+    tts = edge_tts.Communicate(text, "hi-IN-MadhurNeural", rate="+15%")
+    await tts.save(output)
 
 # =====================
-# FFMPEG VIDEO (KEY FIX)
+# CINEMATIC VIDEO ENGINE (FFMPEG)
 # =====================
 def make_video(images, audio, output):
 
-    # create file list
+    if len(images) == 0:
+        st.error("❌ No images generated")
+        return
+
+    # create list file
     with open("files.txt", "w") as f:
         for img in images:
             f.write(f"file '{img}'\n")
             f.write("duration 3\n")
+        f.write(f"file '{images[-1]}'\n")
 
-    # last frame repeat
-    f.write(f"file '{images[-1]}'\n")
-
-    # STEP 1: images → video
+    # STEP 1: images → cinematic video
     subprocess.run([
-        "ffmpeg",
-        "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", "files.txt",
-        "-vsync", "vfr",
-        "-pix_fmt", "yuv420p",
+        "ffmpeg","-y",
+        "-f","concat",
+        "-safe","0",
+        "-i","files.txt",
+        "-vf","zoompan=z='min(zoom+0.0015,1.2)':d=75",
+        "-pix_fmt","yuv420p",
         "temp.mp4"
     ])
 
-    # STEP 2: add audio
+    # STEP 2: merge audio
     subprocess.run([
-        "ffmpeg",
-        "-y",
-        "-i", "temp.mp4",
-        "-i", audio,
-        "-c:v", "copy",
-        "-c:a", "aac",
+        "ffmpeg","-y",
+        "-i","temp.mp4",
+        "-i",audio,
+        "-c:v","copy",
+        "-c:a","aac",
         "-shortest",
         output
     ])
 
 # =====================
-# MAIN
+# MAIN EXECUTION
 # =====================
 if btn:
 
     os.makedirs("out", exist_ok=True)
 
-    st.write("🧠 Story...")
+    st.write("🧠 Generating story...")
     story = generate_story(topic)
     st.text_area("Story", story, height=200)
 
     scenes = split_scenes(story)
 
-    st.write("🎨 Images...")
+    st.write("🎨 Generating images...")
     images = []
 
-    for i, s in enumerate(scenes):
+    for i, scene in enumerate(scenes):
         path = f"out/{i}.png"
 
         prompt = f"""
-        indian hospital,
-        emotional doctor patient,
-        cinematic lighting,
-        {s}
+        Indian hospital cinematic scene,
+        emotional lighting,
+        realistic human characters,
+        4k cinematic,
+        {scene}
         """
 
         img = generate_image(prompt, path)
@@ -165,13 +175,14 @@ if btn:
 
         images.append(path)
 
-    st.write("🔊 Voice...")
-    audio = "out/audio.mp3"
-    asyncio.run(voice(story, audio))
+    st.write("🔊 Generating voice...")
+    audio_path = "out/audio.mp3"
+    asyncio.run(generate_voice(story, audio_path))
 
-    st.write("🎬 Rendering (FAST)...")
-    video = "out/final.mp4"
+    st.write("🎬 Rendering cinematic video...")
+    video_path = "out/final.mp4"
 
-    make_video(images, audio, video)
+    make_video(images, audio_path, video_path)
 
-    st.video(video)
+    st.success("✅ Done!")
+    st.video(video_path)
