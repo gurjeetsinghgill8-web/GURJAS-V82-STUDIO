@@ -3,32 +3,78 @@ import os
 import requests
 import asyncio
 
-# SAFE moviepy imports
-from moviepy.editor import ImageClip, concatenate_videoclips, AudioFileClip
+# ✅ FIXED moviepy import (NO editor error)
+from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
+from moviepy.audio.io.AudioFileClip import AudioFileClip
 
 import edge_tts
+from PIL import Image, ImageDraw
 
-# ==============================
-# CONFIG
-# ==============================
-STABILITY_API_KEY = "sk-zO5hqr9zjKHhFwJLrJpiFIlT91ERpzzQGMcf0YzbdOSUmwYx"
+# =====================
+# 🔐 SECRETS
+# =====================
+STABILITY_API_KEY = st.secrets["STABILITY_API_KEY"]
+GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
-st.set_page_config(page_title="GURJAS AI Studio", layout="wide")
-st.title("🎬 GURJAS AI VIDEO GENERATOR")
+st.set_page_config(page_title="GURJAS PRO AI", layout="wide")
+st.title("🔥 GURJAS PRO — Viral Medical Video Generator")
 
-# ==============================
+# =====================
 # INPUT
-# ==============================
+# =====================
 topic = st.text_input("Enter Topic", "Heart Attack Warning")
-num_scenes = st.slider("Number of Scenes", 3, 5, 3)
+btn = st.button("🚀 Generate Video")
 
-generate_btn = st.button("🚀 Generate Video")
+# =====================
+# STORY (HINDI LONG)
+# =====================
+def generate_story(topic):
 
-# ==============================
-# FUNCTIONS
-# ==============================
+    prompt = f"""
+    Hindi me 60 second ka viral reel script likho:
 
-def generate_ai_image(prompt, output_path):
+    Topic: {topic}
+
+    Format:
+    1. HOOK (shock line)
+    2. STORY (real patient case)
+    3. BUILDUP (symptoms + suspense)
+    4. TWIST
+    5. WARNING
+    6. CTA
+
+    Emotional + engaging + suspenseful
+    """
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    data = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [{"role": "user", "content": prompt}]
+    }
+
+    r = requests.post(url, headers=headers, json=data)
+
+    return r.json()["choices"][0]["message"]["content"]
+
+# =====================
+# SCENE SPLIT
+# =====================
+def split_scenes(text):
+    lines = text.split("\n")
+    scenes = [l.strip() for l in lines if len(l.strip()) > 20]
+    return scenes[:10]
+
+# =====================
+# IMAGE GENERATION
+# =====================
+def generate_image(prompt, path):
+
     url = "https://api.stability.ai/v2beta/stable-image/generate/core"
 
     headers = {
@@ -42,97 +88,87 @@ def generate_ai_image(prompt, output_path):
     }
 
     try:
-        response = requests.post(url, headers=headers, files=files, timeout=60)
+        r = requests.post(url, headers=headers, files=files, timeout=60)
 
-        if response.status_code == 200:
-            with open(output_path, "wb") as f:
-                f.write(response.content)
-            return output_path
-        else:
-            st.warning("⚠️ Image API failed, using fallback image")
-            return None
+        if r.status_code == 200:
+            with open(path, "wb") as f:
+                f.write(r.content)
+            return path
     except:
-        st.warning("⚠️ API error, using fallback")
-        return None
+        pass
 
+    return None
 
-def build_prompt(topic, i):
-    return f"""
-    Ultra realistic medical scene about {topic},
-    Indian doctor explaining to patient,
-    hospital environment,
-    cinematic lighting, 4k, realistic,
-    no cartoon, no illustration
-    """
-
-
-# fallback simple image (so app kabhi crash na ho)
-def create_fallback_image(path, text):
-    from PIL import Image, ImageDraw
-
-    img = Image.new("RGB", (720, 1280), color=(20, 20, 30))
+# =====================
+# FALLBACK IMAGE
+# =====================
+def fallback(path, text):
+    img = Image.new("RGB", (720, 1280), (30, 30, 40))
     draw = ImageDraw.Draw(img)
-    draw.text((50, 600), text, fill=(255, 255, 255))
-
+    draw.text((40, 600), text[:50], fill=(255,255,255))
     img.save(path)
     return path
 
+# =====================
+# VOICE
+# =====================
+async def voice(text, output):
+    tts = edge_tts.Communicate(text, "hi-IN-SwaraNeural")
+    await tts.save(output)
 
-async def generate_voice(text, output_file):
-    communicate = edge_tts.Communicate(text, "en-IN-NeerjaNeural")
-    await communicate.save(output_file)
+# =====================
+# VIDEO CREATION (FIXED)
+# =====================
+def make_video(images, audio, output):
 
+    clip = ImageSequenceClip(images, fps=0.5)  # slow = longer video
 
-def create_video(images, audio_file, output_file):
-    clips = []
+    if os.path.exists(audio):
+        sound = AudioFileClip(audio)
+        clip = clip.set_audio(sound)
 
-    for img in images:
-        clip = ImageClip(img).set_duration(3)
-        clips.append(clip)
+    clip.write_videofile(output, fps=24)
 
-    video = concatenate_videoclips(clips)
-
-    if os.path.exists(audio_file):
-        audio = AudioFileClip(audio_file)
-        video = video.set_audio(audio)
-
-    video.write_videofile(output_file, fps=24)
-
-
-# ==============================
+# =====================
 # MAIN
-# ==============================
-
-if generate_btn:
+# =====================
+if btn:
 
     os.makedirs("output", exist_ok=True)
 
-    st.write("🖼️ Generating images...")
+    st.write("🧠 Creating script...")
+    story = generate_story(topic)
+    st.text_area("Script", story, height=300)
 
+    scenes = split_scenes(story)
+
+    st.write("🖼 Generating scenes...")
     images = []
 
-    for i in range(num_scenes):
-        path = f"output/scene_{i}.png"
+    for i, s in enumerate(scenes):
+        path = f"output/img_{i}.png"
 
-        prompt = build_prompt(topic, i)
-        img = generate_ai_image(prompt, path)
+        prompt = f"""
+        realistic indian hospital scene,
+        {s},
+        cinematic lighting, emotional, 4k
+        """
 
-        # fallback if API fails
+        img = generate_image(prompt, path)
+
         if not img:
-            img = create_fallback_image(path, f"{topic} Scene {i+1}")
+            img = fallback(path, s)
 
         images.append(img)
 
-    st.write("🔊 Generating voice...")
-
+    st.write("🔊 Voice...")
     audio_path = "output/voice.mp3"
-    asyncio.run(generate_voice(f"This video explains {topic}", audio_path))
+    asyncio.run(voice(story, audio_path))
 
-    st.write("🎥 Creating video...")
-
+    st.write("🎬 Video rendering...")
     video_path = "output/final.mp4"
-    create_video(images, audio_path, video_path)
 
-    st.success("✅ Video Ready!")
+    make_video(images, audio_path, video_path)
 
+    st.success("✅ Done!")
     st.video(video_path)
